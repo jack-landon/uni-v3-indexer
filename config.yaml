@@ -30,6 +30,8 @@ networks:
   #     - name: UniswapV3Pool
   #       address:
   - id: 8453
+    rpc_config:
+      url: https://base.rpc.hypersync.xyz
     start_block: 1371670
     contracts:
       - name: UniswapV3Factory
