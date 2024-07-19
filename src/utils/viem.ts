@@ -10,11 +10,6 @@ import {
   polygon,
 } from "viem/chains";
 
-export const publicClient = createPublicClient({
-  chain: mainnet,
-  transport: http(),
-});
-
 export enum ChainId {
   ARBITRUM_ONE = 42161,
   AVALANCHE = 43114,

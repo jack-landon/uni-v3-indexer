@@ -28,15 +28,16 @@ export function createTick(
   };
 
   // 1.0001^tick is token1/token0.
-  const price0 = fastExponentiation(
-    BigDecimal("1.0001"),
-    parseInt(tickIdx.toString())
+  const price0 = BigDecimal(
+    fastExponentiation(1.0001, parseInt(tickIdx.toString()))
   );
+
+  const price1 = safeDiv(ONE_BD, price0).decimalPlaces(18);
 
   tick = {
     ...tick,
-    price0: price0,
-    price1: safeDiv(ONE_BD, price0),
+    price0,
+    price1,
   };
 
   return tick;

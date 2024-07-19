@@ -28,6 +28,7 @@ import {
 import { getSubgraphConfig } from "./utils/chains";
 import {
   getDayID,
+  getDayStartTimestamp,
   getHourIndex,
   getHourStartUnix,
   updatePoolDayData,
@@ -39,34 +40,30 @@ import {
 import { createTick } from "./utils/tick";
 
 UniswapV3PoolContract.Burn.loader(({ event, context }) => {
-  const poolAddress = event.srcAddress;
-  const lowerTickId =
-    poolAddress + "#" + BigInt(event.params.tickLower).toString();
-  const upperTickId =
-    poolAddress + "#" + BigInt(event.params.tickUpper).toString();
-
-  context.Tick.load(lowerTickId, {
-    loadPool: { loadToken0: true, loadToken1: true },
-  });
-  context.Tick.load(upperTickId, {
-    loadPool: { loadToken0: true, loadToken1: true },
-  });
-  context.Bundle.load(event.chainId.toString());
-
-  const dayID = getDayID(event.blockTimestamp);
-  context.UniswapDayData.load(dayID.toString());
-
-  const dayPoolID = event.srcAddress.concat("-").concat(dayID.toString());
-  context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
-  context.PoolDayData.load(dayPoolID, {
-    loadPool: { loadToken0: true, loadToken1: true },
-  });
-
-  const hourIndex = getHourIndex(event.blockTimestamp); // get unique hour within unix history
-  const hourPoolID = event.srcAddress.concat("-").concat(hourIndex.toString());
-  context.PoolHourData.load(hourPoolID, {
-    loadPool: { loadToken0: true, loadToken1: true },
-  });
+  // const poolAddress = event.srcAddress;
+  // const lowerTickId =
+  //   poolAddress + "#" + BigInt(event.params.tickLower).toString();
+  // const upperTickId =
+  //   poolAddress + "#" + BigInt(event.params.tickUpper).toString();
+  // context.Tick.load(lowerTickId, {
+  //   loadPool: { loadToken0: true, loadToken1: true },
+  // });
+  // context.Tick.load(upperTickId, {
+  //   loadPool: { loadToken0: true, loadToken1: true },
+  // });
+  // context.Bundle.load(event.chainId.toString());
+  // const dayID = getDayID(event.blockTimestamp);
+  // context.UniswapDayData.load(dayID.toString());
+  // const dayPoolID = event.srcAddress.concat("-").concat(dayID.toString());
+  // context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
+  // context.PoolDayData.load(dayPoolID, {
+  //   loadPool: { loadToken0: true, loadToken1: true },
+  // });
+  // const hourIndex = getHourIndex(event.blockTimestamp); // get unique hour within unix history
+  // const hourPoolID = event.srcAddress.concat("-").concat(hourIndex.toString());
+  // context.PoolHourData.load(hourPoolID, {
+  //   loadPool: { loadToken0: true, loadToken1: true },
+  // });
 });
 
 UniswapV3PoolContract.Burn.handlerAsync(async ({ event, context }) => {
@@ -201,16 +198,51 @@ UniswapV3PoolContract.Burn.handlerAsync(async ({ event, context }) => {
     }
 
     const dayID = getDayID(event.blockTimestamp);
+    const dayPoolID = pool.id.concat("-").concat(dayID.toString());
+    const hourIndex = getHourIndex(event.blockTimestamp); // get unique hour within unix history
+    const hourPoolID = pool.id.concat("-").concat(hourIndex.toString());
+    const token0DayID = token0.id.concat("-").concat(dayID.toString());
+    const token1DayID = token1.id.concat("-").concat(dayID.toString());
+    const token0HourID = token0.id.concat("-").concat(hourIndex.toString());
+    const token1HourID = token1.id.concat("-").concat(hourIndex.toString());
 
-    await Promise.all([
-      updateUniswapDayData(dayID, factory, context),
-      updatePoolDayData(dayID, pool, context),
-      updatePoolHourData(event.blockTimestamp, pool, context),
-      updateTokenDayData(token0, bundle, dayID, context),
-      updateTokenDayData(token1, bundle, dayID, context),
-      updateTokenHourData(token0, bundle, event.blockTimestamp, context),
-      updateTokenHourData(token1, bundle, event.blockTimestamp, context),
+    let [
+      uniswapDayData,
+      poolDayData,
+      poolHourData,
+      token0DayData,
+      token1DayData,
+      token0HourData,
+      token1HourData,
+    ] = await Promise.all([
+      context.UniswapDayData.get(dayID.toString()),
+      context.PoolDayData.get(dayPoolID),
+      context.PoolHourData.get(hourPoolID),
+      context.TokenDayData.get(token0DayID),
+      context.TokenDayData.get(token1DayID),
+      context.TokenHourData.get(token0HourID),
+      context.TokenHourData.get(token1HourID),
     ]);
+
+    updateUniswapDayData(dayID, factory, uniswapDayData, context);
+    updatePoolDayData(dayID, pool, poolDayData, context);
+    updatePoolHourData(event.blockTimestamp, pool, poolHourData, context);
+    updateTokenDayData(token0, bundle, dayID, token0DayData, context);
+    updateTokenDayData(token1, bundle, dayID, token1DayData, context);
+    updateTokenHourData(
+      token0,
+      bundle,
+      event.blockTimestamp,
+      token0HourData,
+      context
+    );
+    updateTokenHourData(
+      token1,
+      bundle,
+      event.blockTimestamp,
+      token1HourData,
+      context
+    );
 
     context.Token.set(token0);
     context.Token.set(token1);
@@ -221,23 +253,20 @@ UniswapV3PoolContract.Burn.handlerAsync(async ({ event, context }) => {
 });
 
 UniswapV3PoolContract.Collect.loader(({ event, context }) => {
-  context.Bundle.load(event.chainId.toString());
-  context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
-
-  const dayID = getDayID(event.blockTimestamp);
-  context.UniswapDayData.load(dayID.toString());
-
-  const dayPoolID = event.srcAddress.concat("-").concat(dayID.toString());
-  context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
-  context.PoolDayData.load(dayPoolID, {
-    loadPool: { loadToken0: true, loadToken1: true },
-  });
-
-  const hourIndex = getHourIndex(event.blockTimestamp); // get unique hour within unix history
-  const hourPoolID = event.srcAddress.concat("-").concat(hourIndex.toString());
-  context.PoolHourData.load(hourPoolID, {
-    loadPool: { loadToken0: true, loadToken1: true },
-  });
+  // context.Bundle.load(event.chainId.toString());
+  // context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
+  // const dayID = getDayID(event.blockTimestamp);
+  // context.UniswapDayData.load(dayID.toString());
+  // const dayPoolID = event.srcAddress.concat("-").concat(dayID.toString());
+  // context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
+  // context.PoolDayData.load(dayPoolID, {
+  //   loadPool: { loadToken0: true, loadToken1: true },
+  // });
+  // const hourIndex = getHourIndex(event.blockTimestamp); // get unique hour within unix history
+  // const hourPoolID = event.srcAddress.concat("-").concat(hourIndex.toString());
+  // context.PoolHourData.load(hourPoolID, {
+  //   loadPool: { loadToken0: true, loadToken1: true },
+  // });
 });
 
 UniswapV3PoolContract.Collect.handlerAsync(async ({ event, context }) => {
@@ -385,17 +414,53 @@ UniswapV3PoolContract.Collect.handlerAsync(async ({ event, context }) => {
     logIndex: event.logIndex,
   };
 
+  // Update Interval Data
   const dayID = getDayID(event.blockTimestamp);
+  const dayPoolID = pool.id.concat("-").concat(dayID.toString());
+  const hourIndex = getHourIndex(event.blockTimestamp); // get unique hour within unix history
+  const hourPoolID = pool.id.concat("-").concat(hourIndex.toString());
+  const token0DayID = token0.id.concat("-").concat(dayID.toString());
+  const token1DayID = token1.id.concat("-").concat(dayID.toString());
+  const token0HourID = token0.id.concat("-").concat(hourIndex.toString());
+  const token1HourID = token1.id.concat("-").concat(hourIndex.toString());
 
-  await Promise.all([
-    updateUniswapDayData(dayID, factory, context),
-    updatePoolDayData(dayID, pool, context),
-    updatePoolHourData(event.blockTimestamp, pool, context),
-    updateTokenDayData(token0, bundle, dayID, context),
-    updateTokenDayData(token1, bundle, dayID, context),
-    updateTokenHourData(token0, bundle, event.blockTimestamp, context),
-    updateTokenHourData(token1, bundle, event.blockTimestamp, context),
+  let [
+    uniswapDayData,
+    poolDayData,
+    poolHourData,
+    token0DayData,
+    token1DayData,
+    token0HourData,
+    token1HourData,
+  ] = await Promise.all([
+    context.UniswapDayData.get(dayID.toString()),
+    context.PoolDayData.get(dayPoolID),
+    context.PoolHourData.get(hourPoolID),
+    context.TokenDayData.get(token0DayID),
+    context.TokenDayData.get(token1DayID),
+    context.TokenHourData.get(token0HourID),
+    context.TokenHourData.get(token1HourID),
   ]);
+
+  updateUniswapDayData(dayID, factory, uniswapDayData, context);
+  updatePoolDayData(dayID, pool, poolDayData, context);
+  updatePoolHourData(event.blockTimestamp, pool, poolHourData, context);
+  updateTokenDayData(token0, bundle, dayID, token0DayData, context);
+  updateTokenDayData(token1, bundle, dayID, token1DayData, context);
+  updateTokenHourData(
+    token0,
+    bundle,
+    event.blockTimestamp,
+    token0HourData,
+    context
+  );
+  updateTokenHourData(
+    token1,
+    bundle,
+    event.blockTimestamp,
+    token1HourData,
+    context
+  );
 
   context.Token.set(token0);
   context.Token.set(token1);
@@ -405,22 +470,19 @@ UniswapV3PoolContract.Collect.handlerAsync(async ({ event, context }) => {
 });
 
 UniswapV3PoolContract.Initialize.loader(({ event, context }) => {
-  const subgraphConfig = getSubgraphConfig(event.chainId);
-
-  context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
-  context.Bundle.load(event.chainId.toString());
-  context.Pool.load(subgraphConfig.stablecoinWrappedNativePoolAddress, {
-    loadToken0: true,
-    loadToken1: true,
-  });
-
-  const dayID = getDayID(event.blockTimestamp);
-
-  const dayPoolID = event.srcAddress.concat("-").concat(dayID.toString());
-  context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
-  context.PoolDayData.load(dayPoolID, {
-    loadPool: { loadToken0: true, loadToken1: true },
-  });
+  // const subgraphConfig = getSubgraphConfig(event.chainId);
+  // context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
+  // context.Bundle.load(event.chainId.toString());
+  // context.Pool.load(subgraphConfig.stablecoinWrappedNativePoolAddress, {
+  //   loadToken0: true,
+  //   loadToken1: true,
+  // });
+  // const dayID = getDayID(event.blockTimestamp);
+  // const dayPoolID = event.srcAddress.concat("-").concat(dayID.toString());
+  // context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
+  // context.PoolDayData.load(dayPoolID, {
+  //   loadPool: { loadToken0: true, loadToken1: true },
+  // });
 });
 
 UniswapV3PoolContract.Initialize.handlerAsync(async ({ event, context }) => {
@@ -467,14 +529,20 @@ UniswapV3PoolContract.Initialize.handlerAsync(async ({ event, context }) => {
   context.Bundle.set(bundle);
 
   const dayID = getDayID(event.blockTimestamp);
+  const dayPoolID = pool.id.concat("-").concat(dayID.toString());
+  const hourIndex = getHourIndex(event.blockTimestamp); // get unique hour within unix history
+  const hourPoolID = pool.id.concat("-").concat(hourIndex.toString());
 
   // update token prices
-  let [token0, token1] = await Promise.all([
+  let [token0, token1, poolDayData, poolHourData] = await Promise.all([
     context.Token.get(pool.token0_id),
     context.Token.get(pool.token1_id),
-    updatePoolDayData(dayID, pool, context),
-    updatePoolHourData(event.blockTimestamp, pool, context),
+    context.PoolDayData.get(dayPoolID),
+    context.PoolHourData.get(hourPoolID),
   ]);
+
+  updatePoolDayData(dayID, pool, poolDayData, context);
+  updatePoolHourData(event.blockTimestamp, pool, poolHourData, context);
 
   // update token prices
   if (token0 && token1) {
@@ -513,36 +581,31 @@ UniswapV3PoolContract.Initialize.handlerAsync(async ({ event, context }) => {
 });
 
 UniswapV3PoolContract.Mint.loader(({ event, context }) => {
-  context.Bundle.load(event.chainId.toString());
-  context.Factory.load(getFactoryAddress(event.chainId));
-  context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
-
-  const lowerTickId =
-    event.srcAddress + "#" + BigInt(event.params.tickLower).toString();
-  const upperTickId =
-    event.srcAddress + "#" + BigInt(event.params.tickUpper).toString();
-
-  context.Tick.load(lowerTickId, {
-    loadPool: { loadToken0: true, loadToken1: true },
-  });
-  context.Tick.load(upperTickId, {
-    loadPool: { loadToken0: true, loadToken1: true },
-  });
-
-  const dayID = getDayID(event.blockTimestamp);
-  context.UniswapDayData.load(dayID.toString());
-
-  const dayPoolID = event.srcAddress.concat("-").concat(dayID.toString());
-  context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
-  context.PoolDayData.load(dayPoolID, {
-    loadPool: { loadToken0: true, loadToken1: true },
-  });
-
-  const hourIndex = getHourIndex(event.blockTimestamp); // get unique hour within unix history
-  const hourPoolID = event.srcAddress.concat("-").concat(hourIndex.toString());
-  context.PoolHourData.load(hourPoolID, {
-    loadPool: { loadToken0: true, loadToken1: true },
-  });
+  // context.Bundle.load(event.chainId.toString());
+  // context.Factory.load(getFactoryAddress(event.chainId));
+  // context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
+  // const lowerTickId =
+  //   event.srcAddress + "#" + BigInt(event.params.tickLower).toString();
+  // const upperTickId =
+  //   event.srcAddress + "#" + BigInt(event.params.tickUpper).toString();
+  // context.Tick.load(lowerTickId, {
+  //   loadPool: { loadToken0: true, loadToken1: true },
+  // });
+  // context.Tick.load(upperTickId, {
+  //   loadPool: { loadToken0: true, loadToken1: true },
+  // });
+  // const dayID = getDayID(event.blockTimestamp);
+  // context.UniswapDayData.load(dayID.toString());
+  // const dayPoolID = event.srcAddress.concat("-").concat(dayID.toString());
+  // context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
+  // context.PoolDayData.load(dayPoolID, {
+  //   loadPool: { loadToken0: true, loadToken1: true },
+  // });
+  // const hourIndex = getHourIndex(event.blockTimestamp); // get unique hour within unix history
+  // const hourPoolID = event.srcAddress.concat("-").concat(hourIndex.toString());
+  // context.PoolHourData.load(hourPoolID, {
+  //   loadPool: { loadToken0: true, loadToken1: true },
+  // });
 });
 
 UniswapV3PoolContract.Mint.handlerAsync(async ({ event, context }) => {
@@ -746,16 +809,51 @@ UniswapV3PoolContract.Mint.handlerAsync(async ({ event, context }) => {
     // level requires reimplementing some of the swapping code from v3-core.
 
     const dayID = getDayID(event.blockTimestamp);
+    const dayPoolID = pool.id.concat("-").concat(dayID.toString());
+    const hourIndex = getHourIndex(event.blockTimestamp); // get unique hour within unix history
+    const hourPoolID = pool.id.concat("-").concat(hourIndex.toString());
+    const token0DayID = token0.id.concat("-").concat(dayID.toString());
+    const token1DayID = token1.id.concat("-").concat(dayID.toString());
+    const token0HourID = token0.id.concat("-").concat(hourIndex.toString());
+    const token1HourID = token1.id.concat("-").concat(hourIndex.toString());
 
-    await Promise.all([
-      updateUniswapDayData(dayID, factory, context),
-      updatePoolDayData(dayID, pool, context),
-      updatePoolHourData(event.blockTimestamp, pool, context),
-      updateTokenDayData(token0, bundle, dayID, context),
-      updateTokenDayData(token1, bundle, dayID, context),
-      updateTokenHourData(token0, bundle, event.blockTimestamp, context),
-      updateTokenHourData(token1, bundle, event.blockTimestamp, context),
+    let [
+      uniswapDayData,
+      poolDayData,
+      poolHourData,
+      token0DayData,
+      token1DayData,
+      token0HourData,
+      token1HourData,
+    ] = await Promise.all([
+      context.UniswapDayData.get(dayID.toString()),
+      context.PoolDayData.get(dayPoolID),
+      context.PoolHourData.get(hourPoolID),
+      context.TokenDayData.get(token0DayID),
+      context.TokenDayData.get(token1DayID),
+      context.TokenHourData.get(token0HourID),
+      context.TokenHourData.get(token1HourID),
     ]);
+
+    updateUniswapDayData(dayID, factory, uniswapDayData, context);
+    updatePoolDayData(dayID, pool, poolDayData, context);
+    updatePoolHourData(event.blockTimestamp, pool, poolHourData, context);
+    updateTokenDayData(token0, bundle, dayID, token0DayData, context);
+    updateTokenDayData(token1, bundle, dayID, token1DayData, context);
+    updateTokenHourData(
+      token0,
+      bundle,
+      event.blockTimestamp,
+      token0HourData,
+      context
+    );
+    updateTokenHourData(
+      token1,
+      bundle,
+      event.blockTimestamp,
+      token1HourData,
+      context
+    );
 
     context.Token.set(token0);
     context.Token.set(token1);
@@ -766,30 +864,26 @@ UniswapV3PoolContract.Mint.handlerAsync(async ({ event, context }) => {
 });
 
 UniswapV3PoolContract.Swap.loader(({ event, context }) => {
-  const subgraphConfig = getSubgraphConfig(event.chainId);
-
-  context.Bundle.load(event.chainId.toString());
-  context.Factory.load(getFactoryAddress(event.chainId));
-  context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
-  context.Pool.load(subgraphConfig.stablecoinWrappedNativePoolAddress, {
-    loadToken0: true,
-    loadToken1: true,
-  });
-
-  const dayID = getDayID(event.blockTimestamp);
-  context.UniswapDayData.load(dayID.toString());
-
-  const dayPoolID = event.srcAddress.concat("-").concat(dayID.toString());
-  context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
-  context.PoolDayData.load(dayPoolID, {
-    loadPool: { loadToken0: true, loadToken1: true },
-  });
-
-  const hourIndex = getHourIndex(event.blockTimestamp); // get unique hour within unix history
-  const hourPoolID = event.srcAddress.concat("-").concat(hourIndex.toString());
-  context.PoolHourData.load(hourPoolID, {
-    loadPool: { loadToken0: true, loadToken1: true },
-  });
+  // const subgraphConfig = getSubgraphConfig(event.chainId);
+  // context.Bundle.load(event.chainId.toString());
+  // context.Factory.load(getFactoryAddress(event.chainId));
+  // context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
+  // context.Pool.load(subgraphConfig.stablecoinWrappedNativePoolAddress, {
+  //   loadToken0: true,
+  //   loadToken1: true,
+  // });
+  // const dayID = getDayID(event.blockTimestamp);
+  // context.UniswapDayData.load(dayID.toString());
+  // const dayPoolID = event.srcAddress.concat("-").concat(dayID.toString());
+  // context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
+  // context.PoolDayData.load(dayPoolID, {
+  //   loadPool: { loadToken0: true, loadToken1: true },
+  // });
+  // const hourIndex = getHourIndex(event.blockTimestamp); // get unique hour within unix history
+  // const hourPoolID = event.srcAddress.concat("-").concat(hourIndex.toString());
+  // context.PoolHourData.load(hourPoolID, {
+  //   loadPool: { loadToken0: true, loadToken1: true },
+  // });
 });
 
 UniswapV3PoolContract.Swap.handlerAsync(async ({ event, context }) => {
@@ -1063,24 +1157,74 @@ UniswapV3PoolContract.Swap.handlerAsync(async ({ event, context }) => {
 
     // interval data
     const dayID = getDayID(event.blockTimestamp);
+    const dayPoolID = pool.id.concat("-").concat(dayID.toString());
+    const hourIndex = getHourIndex(event.blockTimestamp); // get unique hour within unix history
+    const hourStartUnix = getHourStartUnix(hourIndex); // want the rounded effect
+    const hourPoolID = pool.id.concat("-").concat(hourIndex.toString());
+    const token0DayID = token0.id.concat("-").concat(dayID.toString());
+    const token1DayID = token1.id.concat("-").concat(dayID.toString());
+    const token0HourID = token0.id.concat("-").concat(hourIndex.toString());
+    const token1HourID = token1.id.concat("-").concat(hourIndex.toString());
 
     let [
-      uniswapDayData,
-      poolDayData,
-      poolHourData,
-      token0DayData,
-      token1DayData,
-      token0HourData,
-      token1HourData,
+      _uniswapDayData,
+      _poolDayData,
+      _poolHourData,
+      _token0DayData,
+      _token1DayData,
+      _token0HourData,
+      _token1HourData,
     ] = await Promise.all([
-      updateUniswapDayData(dayID, factory, context),
-      updatePoolDayData(dayID, pool, context),
-      updatePoolHourData(event.blockTimestamp, pool, context),
-      updateTokenDayData(token0, bundle, dayID, context),
-      updateTokenDayData(token1, bundle, dayID, context),
-      updateTokenHourData(token0, bundle, event.blockTimestamp, context),
-      updateTokenHourData(token1, bundle, event.blockTimestamp, context),
+      context.UniswapDayData.get(dayID.toString()),
+      context.PoolDayData.get(dayPoolID),
+      context.PoolHourData.get(hourPoolID),
+      context.TokenDayData.get(token0DayID),
+      context.TokenDayData.get(token1DayID),
+      context.TokenHourData.get(token0HourID),
+      context.TokenHourData.get(token1HourID),
     ]);
+
+    let uniswapDayData = updateUniswapDayData(
+      dayID,
+      factory,
+      _uniswapDayData,
+      context
+    );
+    let poolDayData = updatePoolDayData(dayID, pool, _poolDayData, context);
+    let poolHourData = updatePoolHourData(
+      event.blockTimestamp,
+      pool,
+      _poolHourData,
+      context
+    );
+    let token0DayData = updateTokenDayData(
+      token0,
+      bundle,
+      dayID,
+      _token0DayData,
+      context
+    );
+    let token1DayData = updateTokenDayData(
+      token1,
+      bundle,
+      dayID,
+      _token1DayData,
+      context
+    );
+    let token0HourData = updateTokenHourData(
+      token0,
+      bundle,
+      event.blockTimestamp,
+      _token0HourData,
+      context
+    );
+    let token1HourData = updateTokenHourData(
+      token1,
+      bundle,
+      event.blockTimestamp,
+      _token1HourData,
+      context
+    );
 
     // update volume metrics
     uniswapDayData = {
