@@ -69,10 +69,18 @@ UniswapV3PoolContract.Burn.loader(({ event, context }) => {
 UniswapV3PoolContract.Burn.handlerAsync(async ({ event, context }) => {
   const factoryAddress = getFactoryAddress(event.chainId);
 
-  let [bundle, pool, factory] = await Promise.all([
+  // tick entities
+  const lowerTickId =
+    event.srcAddress + "#" + event.params.tickLower.toString();
+  const upperTickId =
+    event.srcAddress + "#" + event.params.tickUpper.toString();
+
+  let [bundle, pool, factory, lowerTick, upperTick] = await Promise.all([
     context.Bundle.get(event.chainId.toString())!,
     context.Pool.get(event.srcAddress)!,
     context.Factory.get(factoryAddress)!,
+    context.Tick.get(lowerTickId),
+    context.Tick.get(upperTickId),
   ]);
 
   if (!bundle) {
@@ -87,17 +95,9 @@ UniswapV3PoolContract.Burn.handlerAsync(async ({ event, context }) => {
     return context.log.error(`Factory not found for chain ${event.chainId}`);
   }
 
-  // tick entities
-  const lowerTickId =
-    event.srcAddress + "#" + event.params.tickLower.toString();
-  const upperTickId =
-    event.srcAddress + "#" + event.params.tickUpper.toString();
-
-  let [token0, token1, lowerTick, upperTick] = await Promise.all([
+  let [token0, token1] = await Promise.all([
     context.Token.get(pool.token0_id),
     context.Token.get(pool.token1_id),
-    context.Tick.get(lowerTickId),
-    context.Tick.get(upperTickId),
   ]);
 
   if (token0 && token1) {
@@ -275,10 +275,16 @@ UniswapV3PoolContract.Collect.handlerAsync(async ({ event, context }) => {
 
   const whitelistTokens = subgraphConfig.whitelistTokens;
 
-  let [bundle, pool, factory] = await Promise.all([
+  let [bundle, pool, factory, transaction] = await Promise.all([
     context.Bundle.get(event.chainId.toString())!,
     context.Pool.get(event.srcAddress),
     context.Factory.get(factoryAddress)!,
+    loadTransaction(
+      event.transactionHash,
+      event.blockNumber,
+      event.blockTimestamp,
+      context
+    ),
   ]);
 
   if (!bundle) {
@@ -288,13 +294,6 @@ UniswapV3PoolContract.Collect.handlerAsync(async ({ event, context }) => {
   if (!pool) {
     return;
   }
-
-  const transaction = await loadTransaction(
-    event.transactionHash,
-    event.blockNumber,
-    event.blockTimestamp,
-    context
-  );
 
   if (!factory) {
     return context.log.error(`Factory not found for chain ${event.chainId}`);
@@ -611,11 +610,25 @@ UniswapV3PoolContract.Mint.loader(({ event, context }) => {
 UniswapV3PoolContract.Mint.handlerAsync(async ({ event, context }) => {
   const factoryAddress = getFactoryAddress(event.chainId);
 
-  let [bundle, pool, factory] = await Promise.all([
-    context.Bundle.get(event.chainId.toString())!,
-    context.Pool.get(event.srcAddress)!,
-    context.Factory.get(factoryAddress)!,
-  ]);
+  const lowerTickId =
+    event.srcAddress + "#" + event.params.tickLower.toString();
+  const upperTickId =
+    event.srcAddress + "#" + event.params.tickUpper.toString();
+
+  let [bundle, pool, factory, transaction, lowerTick, upperTick] =
+    await Promise.all([
+      context.Bundle.get(event.chainId.toString())!,
+      context.Pool.get(event.srcAddress)!,
+      context.Factory.get(factoryAddress)!,
+      loadTransaction(
+        event.transactionHash,
+        event.blockNumber,
+        event.blockTimestamp,
+        context
+      ),
+      context.Tick.get(lowerTickId),
+      context.Tick.get(upperTickId),
+    ]);
 
   if (!bundle) {
     return context.log.error(`Bundle not found for chain ${event.chainId}`);
@@ -629,22 +642,9 @@ UniswapV3PoolContract.Mint.handlerAsync(async ({ event, context }) => {
     return context.log.error(`Factory not found for chain ${event.chainId}`);
   }
 
-  const lowerTickId =
-    event.srcAddress + "#" + event.params.tickLower.toString();
-  const upperTickId =
-    event.srcAddress + "#" + event.params.tickUpper.toString();
-
-  let [token0, token1, transaction, lowerTick, upperTick] = await Promise.all([
+  let [token0, token1] = await Promise.all([
     context.Token.get(pool.token0_id),
     context.Token.get(pool.token1_id),
-    loadTransaction(
-      event.transactionHash,
-      event.blockNumber,
-      event.blockTimestamp,
-      context
-    ),
-    context.Tick.get(lowerTickId),
-    context.Tick.get(upperTickId),
   ]);
 
   if (token0 && token1) {
@@ -1159,7 +1159,6 @@ UniswapV3PoolContract.Swap.handlerAsync(async ({ event, context }) => {
     const dayID = getDayID(event.blockTimestamp);
     const dayPoolID = pool.id.concat("-").concat(dayID.toString());
     const hourIndex = getHourIndex(event.blockTimestamp); // get unique hour within unix history
-    const hourStartUnix = getHourStartUnix(hourIndex); // want the rounded effect
     const hourPoolID = pool.id.concat("-").concat(hourIndex.toString());
     const token0DayID = token0.id.concat("-").concat(dayID.toString());
     const token1DayID = token1.id.concat("-").concat(dayID.toString());
