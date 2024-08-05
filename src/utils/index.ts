@@ -1,10 +1,8 @@
 import {
   BigDecimal,
-  TransactionEntity,
-  UniswapV3PoolContract_BurnEvent_handlerContextAsync,
-  UniswapV3PoolContract_CollectEvent_handlerContextAsync,
-  UniswapV3PoolContract_MintEvent_handlerContextAsync,
-  UniswapV3PoolContract_SwapEvent_handlerContextAsync,
+  Transaction,
+  handlerContext,
+  loaderContext
 } from "generated";
 import {
   BASE_FACTORY_CONTRACT,
@@ -133,16 +131,12 @@ export function convertEthToDecimal(eth: BigInt): BigDecimal {
   return BigDecimal(eth.toString()).div(exponentToBigDecimal(18));
 }
 
-export async function loadTransaction(
+export async function getAndSetTransaction(
   transactionHash: string,
   blockNumber: number,
   timestamp: number,
-  context:
-    | UniswapV3PoolContract_BurnEvent_handlerContextAsync
-    | UniswapV3PoolContract_CollectEvent_handlerContextAsync
-    | UniswapV3PoolContract_MintEvent_handlerContextAsync
-    | UniswapV3PoolContract_SwapEvent_handlerContextAsync
-): Promise<TransactionEntity> {
+  context: handlerContext
+): Promise<Transaction> {
   let transaction = await context.Transaction.get(transactionHash);
   if (!transaction) {
     transaction = {

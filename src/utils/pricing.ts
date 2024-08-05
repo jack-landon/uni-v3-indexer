@@ -1,12 +1,9 @@
 import {
   BigDecimal,
-  BundleEntity,
-  PoolEntity,
-  TokenEntity,
-  UniswapV3PoolContract_InitializeEvent_handlerContext,
-  UniswapV3PoolContract_InitializeEvent_handlerContextAsync,
-  UniswapV3PoolContract_SwapEvent_handlerContext,
-  UniswapV3PoolContract_SwapEvent_handlerContextAsync,
+  Bundle,
+  Pool,
+  Token,
+  handlerContext,
 } from "generated";
 import { exponentToBigDecimal, safeDiv } from "../utils/index";
 import { ONE_BD, ZERO_BD, ZERO_BI } from "./constants";
@@ -55,8 +52,8 @@ export const MINIMUM_ETH_LOCKED = BigDecimal("60");
 const Q192 = BigInt(2) ** BigInt(192);
 export function sqrtPriceX96ToTokenPrices(
   sqrtPriceX96: bigint,
-  token0: TokenEntity,
-  token1: TokenEntity
+  token0: Token,
+  token1: Token
 ): BigDecimal[] {
   const num = BigDecimal((sqrtPriceX96 * sqrtPriceX96).toString());
   const denom = BigDecimal(Q192.toString());
@@ -71,7 +68,7 @@ export function sqrtPriceX96ToTokenPrices(
 
 export function getNativePriceInUSD(
   stablecoinIsToken0: boolean,
-  stablecoinWrappedNativePool?: PoolEntity
+  stablecoinWrappedNativePool?: Pool
 ): BigDecimal {
   if (stablecoinWrappedNativePool) {
     return stablecoinIsToken0
@@ -87,14 +84,12 @@ export function getNativePriceInUSD(
  * @todo update to be derived ETH (add stablecoin estimates)
  **/
 export async function findNativePerToken(
-  token: TokenEntity,
+  token: Token,
   wrappedNativeAddress: string,
   stablecoinAddresses: string[],
   minimumNativeLocked: BigDecimal,
-  bundle: BundleEntity,
-  context:
-    | UniswapV3PoolContract_SwapEvent_handlerContextAsync
-    | UniswapV3PoolContract_InitializeEvent_handlerContextAsync
+  bundle: Bundle,
+  context: handlerContext
 ): Promise<BigDecimal> {
   if (token.id == wrappedNativeAddress) {
     return ONE_BD;
@@ -170,11 +165,11 @@ export async function findNativePerToken(
  */
 export function getTrackedAmountUSD(
   tokenAmount0: BigDecimal,
-  token0: TokenEntity,
+  token0: Token,
   tokenAmount1: BigDecimal,
-  token1: TokenEntity,
+  token1: Token,
   whitelistTokens: string[],
-  bundle: BundleEntity
+  bundle: Bundle
 ): BigDecimal {
   const price0USD = token0.derivedETH.times(bundle.ethPriceUSD);
   const price1USD = token1.derivedETH.times(bundle.ethPriceUSD);
