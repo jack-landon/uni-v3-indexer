@@ -1,8 +1,9 @@
 import {
-  PoolEntity,
-  UniswapV3FactoryContract_PoolCreatedEvent_handlerContextAsync,
-  UniswapV3PoolContract_InitializeEvent_handlerContextAsync,
-  UniswapV3PoolContract_SwapEvent_handlerContextAsync,
+  Pool,
+  UniswapV3Factory_PoolCreated_eventArgs,
+  UniswapV3Pool_Initialize_eventArgs,
+  UniswapV3Pool_Swap_eventArgs,
+  handlerContext,
 } from "generated";
 import { convertTokenToDecimal } from "../utils";
 import { ZERO_BD, ZERO_BI } from "../utils/constants";
@@ -19,7 +20,7 @@ import { erc20Abi, poolAbi } from "../utils/abis";
 export async function populateToken(
   tokenAddress: string,
   tokenOverrides: StaticTokenDefinition[],
-  context: UniswapV3FactoryContract_PoolCreatedEvent_handlerContextAsync,
+  context: handlerContext,
   chainId: keyof typeof publicClients
 ): Promise<void> {
   let token = await context.Token.get(tokenAddress);
@@ -72,7 +73,7 @@ export async function populateEmptyPools(
   poolMappings: Array<`0x${string}`[]>,
   whitelistTokens: string[],
   tokenOverrides: StaticTokenDefinition[],
-  context: UniswapV3FactoryContract_PoolCreatedEvent_handlerContextAsync,
+  context: handlerContext,
   chainId: keyof typeof publicClients
 ): Promise<void> {
   const length = poolMappings.length;
@@ -99,7 +100,7 @@ export async function populateEmptyPools(
       populateToken(token1Address, tokenOverrides, context, chainId), // create token entities if needed
     ]);
 
-    let pool: PoolEntity = {
+    let pool: Pool = {
       id: newAddress,
       createdAtBlockNumber: blockNumber,
       createdAtTimestamp: blockTimestamp,

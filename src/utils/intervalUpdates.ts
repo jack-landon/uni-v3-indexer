@@ -1,22 +1,14 @@
 import {
-  BundleEntity,
-  FactoryEntity,
-  PoolDayDataEntity,
-  PoolEntity,
-  PoolHourDataEntity,
-  TokenDayDataEntity,
-  TokenEntity,
-  TokenHourDataEntity,
-  UniswapDayDataEntity,
-  UniswapV3PoolContract_BurnEvent_handlerContext,
-  UniswapV3PoolContract_BurnEvent_handlerContextAsync,
-  UniswapV3PoolContract_CollectEvent_handlerContext,
-  UniswapV3PoolContract_CollectEvent_handlerContextAsync,
-  UniswapV3PoolContract_InitializeEvent_handlerContextAsync,
-  UniswapV3PoolContract_MintEvent_handlerContext,
-  UniswapV3PoolContract_MintEvent_handlerContextAsync,
-  UniswapV3PoolContract_SwapEvent_handlerContext,
-  UniswapV3PoolContract_SwapEvent_handlerContextAsync,
+  Bundle,
+  Factory,
+  PoolDayData,
+  Pool,
+  PoolHourData,
+  TokenDayData,
+  Token,
+  TokenHourData,
+  UniswapDayData,
+  handlerContext,
 } from "generated";
 import { ONE_BI, ZERO_BD, ZERO_BI } from "./constants";
 
@@ -42,13 +34,9 @@ export function getHourStartUnix(hourIndex: number) {
  */
 export async function updateUniswapDayData(
   dayID: number,
-  factory: FactoryEntity,
-  context:
-    | UniswapV3PoolContract_BurnEvent_handlerContextAsync
-    | UniswapV3PoolContract_CollectEvent_handlerContextAsync
-    | UniswapV3PoolContract_MintEvent_handlerContextAsync
-    | UniswapV3PoolContract_SwapEvent_handlerContextAsync
-): Promise<UniswapDayDataEntity> {
+  factory: Factory,
+  context: handlerContext
+): Promise<UniswapDayData> {
   const dayStartTimestamp = getDayStartTimestamp(dayID);
   let uniswapDayData = await context.UniswapDayData.get(dayID.toString());
   if (!uniswapDayData) {
@@ -77,14 +65,9 @@ export async function updateUniswapDayData(
 
 export async function updatePoolDayData(
   dayID: number,
-  pool: PoolEntity,
-  context:
-    | UniswapV3PoolContract_BurnEvent_handlerContextAsync
-    | UniswapV3PoolContract_CollectEvent_handlerContextAsync
-    | UniswapV3PoolContract_MintEvent_handlerContextAsync
-    | UniswapV3PoolContract_SwapEvent_handlerContextAsync
-    | UniswapV3PoolContract_InitializeEvent_handlerContextAsync
-): Promise<PoolDayDataEntity> {
+  pool: Pool,
+  context: handlerContext
+): Promise<PoolDayData> {
   const dayStartTimestamp = getDayStartTimestamp(dayID);
   const dayPoolID = pool.id.concat("-").concat(dayID.toString());
 
@@ -144,14 +127,9 @@ export async function updatePoolDayData(
 
 export async function updatePoolHourData(
   timestamp: number,
-  pool: PoolEntity,
-  context:
-    | UniswapV3PoolContract_BurnEvent_handlerContextAsync
-    | UniswapV3PoolContract_CollectEvent_handlerContextAsync
-    | UniswapV3PoolContract_MintEvent_handlerContextAsync
-    | UniswapV3PoolContract_SwapEvent_handlerContextAsync
-    | UniswapV3PoolContract_InitializeEvent_handlerContextAsync
-): Promise<PoolHourDataEntity> {
+  pool: Pool,
+  context: handlerContext
+): Promise<PoolHourData> {
   const hourIndex = getHourIndex(timestamp); // get unique hour within unix history
   const hourStartUnix = getHourStartUnix(hourIndex); // want the rounded effect
   const hourPoolID = pool.id.concat("-").concat(hourIndex.toString());
@@ -213,15 +191,11 @@ export async function updatePoolHourData(
 }
 
 export async function updateTokenDayData(
-  token: TokenEntity,
-  bundle: BundleEntity,
+  token: Token,
+  bundle: Bundle,
   dayID: number,
-  context:
-    | UniswapV3PoolContract_BurnEvent_handlerContextAsync
-    | UniswapV3PoolContract_CollectEvent_handlerContextAsync
-    | UniswapV3PoolContract_MintEvent_handlerContextAsync
-    | UniswapV3PoolContract_SwapEvent_handlerContextAsync
-): Promise<TokenDayDataEntity> {
+  context: handlerContext
+): Promise<TokenDayData> {
   const dayStartTimestamp = getDayStartTimestamp(dayID);
   const tokenDayID = token.id.concat("-").concat(dayID.toString());
   const tokenPrice = token.derivedETH.times(bundle.ethPriceUSD);
@@ -274,15 +248,11 @@ export async function updateTokenDayData(
 }
 
 export async function updateTokenHourData(
-  token: TokenEntity,
-  bundle: BundleEntity,
+  token: Token,
+  bundle: Bundle,
   timestamp: number,
-  context:
-    | UniswapV3PoolContract_BurnEvent_handlerContextAsync
-    | UniswapV3PoolContract_CollectEvent_handlerContextAsync
-    | UniswapV3PoolContract_MintEvent_handlerContextAsync
-    | UniswapV3PoolContract_SwapEvent_handlerContextAsync
-): Promise<TokenHourDataEntity> {
+  context: handlerContext
+): Promise<TokenHourData> {
   const hourIndex = getHourIndex(timestamp); // get unique hour within unix history
   const hourStartUnix = getHourStartUnix(hourIndex); // want the rounded effect
   const tokenHourID = token.id.concat("-").concat(hourIndex.toString());

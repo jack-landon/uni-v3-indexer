@@ -1,4 +1,4 @@
-import { PoolEntity, UniswapV3FactoryContract } from "generated";
+import { Pool, UniswapV3Factory } from "generated";
 import { getSubgraphConfig, SubgraphConfig } from "./utils/chains";
 import {
   fetchTokenDecimals,
@@ -28,21 +28,33 @@ const poolsToWatch = [
   "0xe9Ed60539a8eA7A4dA04eBFa524e631B1Fd48525", // WETH/SKOP 1%
 ];
 
-UniswapV3FactoryContract.PoolCreated.loader(({ event, context }) => {
-  if (event.chainId == ETH_MAINNET_ID) {
-    context.Factory.load(ETH_MAINNET_FACTORY_CONTRACT);
-  } else if (event.chainId == BASE_MAINNET_ID) {
-    context.Factory.load(BASE_FACTORY_CONTRACT);
-  }
+// UniswapV3Factory.PoolCreated.loader(async ({ event, context }) => {
+//   if (event.chainId === ETH_MAINNET_ID) {
+//     await context.Factory.load(ETH_MAINNET_FACTORY_CONTRACT);
+//   } else if (event.chainId === BASE_MAINNET_ID) {
+//     await context.Factory.load(BASE_FACTORY_CONTRACT);
+//   }
+//   if (poolsToWatch.includes(event.params.pool)) {
+//     await context.contractRegistration.addUniswapV3Pool(event.params.pool);
+//   }
+// });
+UniswapV3Factory.PoolCreated.contractRegister(({ event, context }) => {
   if (poolsToWatch.includes(event.params.pool)) {
-    context.contractRegistration.addUniswapV3Pool(event.params.pool);
+    context.addUniswapV3Pool(event.params.pool);
   }
 });
 
-UniswapV3FactoryContract.PoolCreated.handlerAsync(
-  async ({ event, context }) => {
-    if (event.chainId !== 8453 || !poolsToWatch.includes(event.params.pool))
-      return;
+UniswapV3Factory.PoolCreated.handlerWithLoader({
+  loader: async ({ event, context }) => {
+    if (event.chainId === ETH_MAINNET_ID) {
+      return await context.Factory.get(ETH_MAINNET_FACTORY_CONTRACT);
+    } else if (event.chainId === BASE_MAINNET_ID) {
+      return await context.Factory.get(BASE_FACTORY_CONTRACT);
+    }
+  },
+  handler: async ({ event, context, loaderReturn: factory }) => {
+    if (event.chainId !== 8453 || !poolsToWatch.includes(event.params.pool)) return;
+
     const subgraphConfig = getSubgraphConfig(event.chainId);
     const whitelistTokens = subgraphConfig.whitelistTokens;
     const tokenOverrides = subgraphConfig.tokenOverrides;
@@ -53,14 +65,11 @@ UniswapV3FactoryContract.PoolCreated.handlerAsync(
     );
     const poolMappings = subgraphConfig.poolMappings;
 
-    // temp fix
     if (poolsToSkip.includes(event.params.pool)) return;
 
-    // load factory
-    let factory = await context.Factory.get(event.srcAddress);
 
     if (!factory) {
-      context.log.info(`Theres no factory`);
+      context.log.info(`There's no factory`);
 
       factory = {
         id: event.srcAddress,
@@ -78,22 +87,22 @@ UniswapV3FactoryContract.PoolCreated.handlerAsync(
         owner: ADDRESS_ZERO,
       };
 
-      // create new bundle for tracking eth price
-      context.Bundle.set({
+      await context.Bundle.set({
         id: event.chainId.toString(),
         ethPriceUSD: ZERO_BD,
       });
 
+      // Uncomment if you need to backfill - for generating optimism pre-regenesis data
       // if (poolMappings.length > 0) {
       //   await populateEmptyPools(
       //     event.blockNumber,
-      //     event.blockTimestamp,
+      //     event.block.timestamp,
       //     poolMappings,
       //     whitelistTokens,
       //     tokenOverrides,
       //     context,
       //     event.chainId as keyof typeof publicClients
-      //   ); // Do this if you need to backfill - This is used for generating optimism pre-regenesis data.
+      //   );
       // }
     }
 
@@ -102,13 +111,13 @@ UniswapV3FactoryContract.PoolCreated.handlerAsync(
       poolCount: factory.poolCount + ONE_BI,
     };
 
-    let pool: PoolEntity = {
+    const pool: Pool = {
       id: event.params.pool,
       token0_id: event.params.token0,
       token1_id: event.params.token1,
       feeTier: BigInt(event.params.fee),
-      createdAtTimestamp: event.blockTimestamp,
-      createdAtBlockNumber: event.blockNumber,
+      createdAtTimestamp: event.block.timestamp,
+      createdAtBlockNumber: event.block.number,
       liquidityProviderCount: ZERO_BI,
       txCount: ZERO_BI,
       liquidity: ZERO_BI,
@@ -137,7 +146,6 @@ UniswapV3FactoryContract.PoolCreated.handlerAsync(
       context.Token.get(event.params.token1),
     ]);
 
-    // fetch info if null
     if (!token0) {
       const [decimals, symbol, name, totalSupply] = await Promise.all([
         fetchTokenDecimals(
@@ -162,9 +170,8 @@ UniswapV3FactoryContract.PoolCreated.handlerAsync(
         ),
       ]);
 
-      // bail if we couldn't figure out the decimals
       if (!decimals) {
-        context.log.debug("mybug the decimal on token 0 was null");
+        context.log.debug("The decimal on token 0 was null");
         return;
       }
 
@@ -212,9 +219,8 @@ UniswapV3FactoryContract.PoolCreated.handlerAsync(
         ),
       ]);
 
-      // bail if we couldn't figure out the decimals
       if (!decimals) {
-        context.log.debug("mybug the decimal on token 1 was null");
+        context.log.debug("The decimal on token 1 was null");
         return;
       }
 
@@ -238,7 +244,6 @@ UniswapV3FactoryContract.PoolCreated.handlerAsync(
       };
     }
 
-    // update white listed pools
     if (whitelistTokens.includes(token0.id)) {
       const newPools = token1.whitelistPools;
       newPools.push(pool.id);
@@ -256,13 +261,13 @@ UniswapV3FactoryContract.PoolCreated.handlerAsync(
       };
     }
 
-    context.Pool.set(pool);
-    context.Token.set(token0);
-    context.Token.set(token1);
-    context.Factory.set(factory);
+    await context.Pool.set(pool);
+    await context.Token.set(token0);
+    await context.Token.set(token1);
+    await context.Factory.set(factory);
 
-    //   DOUBLE CHECK THIS
-    // create the tracked contract based on the template
-    // PoolTemplate.create(event.params.pool);
+    // Uncomment if needed for tracked contract creation
+    // await PoolTemplate.create(event.params.pool);
   }
-);
+});
+

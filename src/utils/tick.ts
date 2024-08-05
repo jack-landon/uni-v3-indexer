@@ -1,8 +1,7 @@
 import {
   BigDecimal,
-  TickEntity,
-  UniswapV3PoolContract_MintEvent_eventArgs,
-  eventLog,
+  Tick,
+  handlerContext,
 } from "generated";
 import { fastExponentiation, safeDiv } from ".";
 import { ONE_BD, ZERO_BI } from "./constants";
@@ -13,8 +12,8 @@ export function createTick(
   poolId: string,
   timestamp: number,
   blockNumber: number
-): TickEntity {
-  let tick: TickEntity = {
+): Tick {
+  let tick: Tick = {
     id: tickId,
     tickIdx: tickIdx,
     pool_id: poolId,

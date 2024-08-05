@@ -1,25 +1,24 @@
+# yaml-language-server: $schema=./node_modules/envio/evm.schema.json
 name: Uniswap V3 Indexer
+field_selection:
+  transaction_fields:
+    - "hash"
+    - "from"
 contracts:
   - name: UniswapV3Factory
     abi_file_path: src/abis/factoryAbi.json
     handler: src/EventHandlerFactory.ts
     events:
       - event: PoolCreated(address indexed token0, address indexed token1, uint24 indexed fee, int24 tickSpacing, address pool)
-        isAsync: true
   - name: UniswapV3Pool
     abi_file_path: src/abis/poolAbi.json
     handler: src/EventHandlerPools.ts
     events:
       - event: Burn(address indexed owner, int24 indexed tickLower, int24 indexed tickUpper, uint128 amount, uint256 amount0, uint256 amount1)
-        isAsync: true
       - event: Collect(address indexed owner, address recipient, int24 indexed tickLower, int24 indexed tickUpper, uint128 amount0, uint128 amount1)
-        isAsync: true
       - event: Initialize(uint160 sqrtPriceX96, int24 tick)
-        isAsync: true
       - event: Mint(address sender, address indexed owner, int24 indexed tickLower, int24 indexed tickUpper, uint128 amount, uint256 amount0, uint256 amount1)
-        isAsync: true
       - event: Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)
-        isAsync: true
 networks:
   # - id: 1
   #   start_block: 0
@@ -30,8 +29,9 @@ networks:
   #     - name: UniswapV3Pool
   #       address:
   - id: 8453
-    rpc_config:
-      url: https://base.rpc.hypersync.xyz
+    ## When rpc_config is specified, you cannot use the field_selection part of the config.
+    # rpc_config:
+    #   url: https://base.rpc.hypersync.xyz
     start_block: 1371670
     contracts:
       - name: UniswapV3Factory
