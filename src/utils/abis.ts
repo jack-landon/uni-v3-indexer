@@ -156,7 +156,7 @@ export const erc20Abi = [
     name: "Burn",
     type: "event",
   },
-];
+] as const
 
 export const poolAbi = [
   { inputs: [], stateMutability: "nonpayable", type: "constructor" },
@@ -799,7 +799,7 @@ export const poolAbi = [
     stateMutability: "view",
     type: "function",
   },
-];
+] as const
 
 export const factoryAbi = [
   { inputs: [], stateMutability: "nonpayable", type: "constructor" },
@@ -944,4 +944,4 @@ export const factoryAbi = [
     stateMutability: "nonpayable",
     type: "function",
   },
-];
+] as const

@@ -80,6 +80,8 @@ export function updatePoolDayData(
   dayID: number,
   pool: PoolEntity,
   poolDayData: PoolDayDataEntity | undefined,
+  feeGrowthGlobal0X128: bigint | undefined,
+  feeGrowthGlobal1X128: bigint | undefined,
   context:
     | UniswapV3PoolContract_BurnEvent_handlerContextAsync
     | UniswapV3PoolContract_CollectEvent_handlerContextAsync
@@ -99,6 +101,12 @@ export function updatePoolDayData(
       volumeToken1: ZERO_BD,
       volumeUSD: ZERO_BD,
       feesUSD: ZERO_BD,
+      feeGrowthGlobal0X128: feeGrowthGlobal0X128
+      ? feeGrowthGlobal0X128
+      : ZERO_BI,
+    feeGrowthGlobal1X128: feeGrowthGlobal1X128
+      ? feeGrowthGlobal1X128
+      : ZERO_BI,
       txCount: ZERO_BI,
       openPrice: pool.token0Price,
       high: pool.token0Price,
@@ -126,6 +134,20 @@ export function updatePoolDayData(
     };
   }
 
+  if (feeGrowthGlobal0X128) {
+    poolDayData = {
+      ...poolDayData,
+      feeGrowthGlobal0X128,
+    };
+  }
+
+  if (feeGrowthGlobal1X128) {
+    poolDayData = {
+      ...poolDayData,
+      feeGrowthGlobal1X128,
+    };
+  }
+
   poolDayData = {
     ...poolDayData,
     liquidity: pool.liquidity,
@@ -147,6 +169,8 @@ export function updatePoolHourData(
   timestamp: number,
   pool: PoolEntity,
   poolHourData: PoolHourDataEntity | undefined,
+  feeGrowthGlobal0X128: bigint | undefined,
+  feeGrowthGlobal1X128: bigint | undefined,
   context:
     | UniswapV3PoolContract_BurnEvent_handlerContextAsync
     | UniswapV3PoolContract_CollectEvent_handlerContextAsync
@@ -169,6 +193,8 @@ export function updatePoolHourData(
       volumeUSD: ZERO_BD,
       txCount: ZERO_BI,
       feesUSD: ZERO_BD,
+      feeGrowthGlobal0X128: feeGrowthGlobal0X128 ?? ZERO_BI,
+      feeGrowthGlobal1X128: feeGrowthGlobal1X128 ?? ZERO_BI,
       openPrice: pool.token0Price,
       high: pool.token0Price,
       low: pool.token0Price,

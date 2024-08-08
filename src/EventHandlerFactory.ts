@@ -121,6 +121,8 @@ UniswapV3FactoryContract.PoolCreated.handlerAsync(
       volumeToken1: ZERO_BD,
       volumeUSD: ZERO_BD,
       feesUSD: ZERO_BD,
+      feeGrowthGlobal0X128: ZERO_BI,
+      feeGrowthGlobal1X128: ZERO_BI,
       untrackedVolumeUSD: ZERO_BD,
       collectedFeesToken0: ZERO_BD,
       collectedFeesToken1: ZERO_BD,
