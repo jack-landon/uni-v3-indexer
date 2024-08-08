@@ -40,17 +40,18 @@ export function getHourStartUnix(hourIndex: number) {
  * Tracks global aggregate data over daily windows
  * @param event
  */
-export async function updateUniswapDayData(
+export function updateUniswapDayData(
   dayID: number,
   factory: FactoryEntity,
+  uniswapDayData: UniswapDayDataEntity | undefined,
   context:
     | UniswapV3PoolContract_BurnEvent_handlerContextAsync
     | UniswapV3PoolContract_CollectEvent_handlerContextAsync
     | UniswapV3PoolContract_MintEvent_handlerContextAsync
     | UniswapV3PoolContract_SwapEvent_handlerContextAsync
-): Promise<UniswapDayDataEntity> {
+): UniswapDayDataEntity {
   const dayStartTimestamp = getDayStartTimestamp(dayID);
-  let uniswapDayData = await context.UniswapDayData.get(dayID.toString());
+
   if (!uniswapDayData) {
     uniswapDayData = {
       id: dayID.toString(),
@@ -75,20 +76,22 @@ export async function updateUniswapDayData(
   return uniswapDayData;
 }
 
-export async function updatePoolDayData(
+export function updatePoolDayData(
   dayID: number,
   pool: PoolEntity,
+  poolDayData: PoolDayDataEntity | undefined,
+  feeGrowthGlobal0X128: bigint | undefined,
+  feeGrowthGlobal1X128: bigint | undefined,
   context:
     | UniswapV3PoolContract_BurnEvent_handlerContextAsync
     | UniswapV3PoolContract_CollectEvent_handlerContextAsync
     | UniswapV3PoolContract_MintEvent_handlerContextAsync
     | UniswapV3PoolContract_SwapEvent_handlerContextAsync
     | UniswapV3PoolContract_InitializeEvent_handlerContextAsync
-): Promise<PoolDayDataEntity> {
+): PoolDayDataEntity {
   const dayStartTimestamp = getDayStartTimestamp(dayID);
   const dayPoolID = pool.id.concat("-").concat(dayID.toString());
 
-  let poolDayData = await context.PoolDayData.get(dayPoolID);
   if (!poolDayData) {
     poolDayData = {
       id: dayPoolID,
@@ -98,6 +101,12 @@ export async function updatePoolDayData(
       volumeToken1: ZERO_BD,
       volumeUSD: ZERO_BD,
       feesUSD: ZERO_BD,
+      feeGrowthGlobal0X128: feeGrowthGlobal0X128
+      ? feeGrowthGlobal0X128
+      : ZERO_BI,
+    feeGrowthGlobal1X128: feeGrowthGlobal1X128
+      ? feeGrowthGlobal1X128
+      : ZERO_BI,
       txCount: ZERO_BI,
       openPrice: pool.token0Price,
       high: pool.token0Price,
@@ -125,6 +134,20 @@ export async function updatePoolDayData(
     };
   }
 
+  if (feeGrowthGlobal0X128) {
+    poolDayData = {
+      ...poolDayData,
+      feeGrowthGlobal0X128,
+    };
+  }
+
+  if (feeGrowthGlobal1X128) {
+    poolDayData = {
+      ...poolDayData,
+      feeGrowthGlobal1X128,
+    };
+  }
+
   poolDayData = {
     ...poolDayData,
     liquidity: pool.liquidity,
@@ -142,21 +165,22 @@ export async function updatePoolDayData(
   return poolDayData;
 }
 
-export async function updatePoolHourData(
+export function updatePoolHourData(
   timestamp: number,
   pool: PoolEntity,
+  poolHourData: PoolHourDataEntity | undefined,
+  feeGrowthGlobal0X128: bigint | undefined,
+  feeGrowthGlobal1X128: bigint | undefined,
   context:
     | UniswapV3PoolContract_BurnEvent_handlerContextAsync
     | UniswapV3PoolContract_CollectEvent_handlerContextAsync
     | UniswapV3PoolContract_MintEvent_handlerContextAsync
     | UniswapV3PoolContract_SwapEvent_handlerContextAsync
     | UniswapV3PoolContract_InitializeEvent_handlerContextAsync
-): Promise<PoolHourDataEntity> {
+): PoolHourDataEntity {
   const hourIndex = getHourIndex(timestamp); // get unique hour within unix history
   const hourStartUnix = getHourStartUnix(hourIndex); // want the rounded effect
   const hourPoolID = pool.id.concat("-").concat(hourIndex.toString());
-
-  let poolHourData = await context.PoolHourData.get(hourPoolID);
 
   if (!poolHourData) {
     poolHourData = {
@@ -169,6 +193,8 @@ export async function updatePoolHourData(
       volumeUSD: ZERO_BD,
       txCount: ZERO_BI,
       feesUSD: ZERO_BD,
+      feeGrowthGlobal0X128: feeGrowthGlobal0X128 ?? ZERO_BI,
+      feeGrowthGlobal1X128: feeGrowthGlobal1X128 ?? ZERO_BI,
       openPrice: pool.token0Price,
       high: pool.token0Price,
       low: pool.token0Price,
@@ -212,21 +238,21 @@ export async function updatePoolHourData(
   return poolHourData;
 }
 
-export async function updateTokenDayData(
+export function updateTokenDayData(
   token: TokenEntity,
   bundle: BundleEntity,
   dayID: number,
+  tokenDayData: TokenDayDataEntity | undefined,
   context:
     | UniswapV3PoolContract_BurnEvent_handlerContextAsync
     | UniswapV3PoolContract_CollectEvent_handlerContextAsync
     | UniswapV3PoolContract_MintEvent_handlerContextAsync
     | UniswapV3PoolContract_SwapEvent_handlerContextAsync
-): Promise<TokenDayDataEntity> {
+): TokenDayDataEntity {
   const dayStartTimestamp = getDayStartTimestamp(dayID);
   const tokenDayID = token.id.concat("-").concat(dayID.toString());
   const tokenPrice = token.derivedETH.times(bundle.ethPriceUSD);
 
-  let tokenDayData = await context.TokenDayData.get(tokenDayID);
   if (!tokenDayData) {
     tokenDayData = {
       id: tokenDayID,
@@ -273,21 +299,21 @@ export async function updateTokenDayData(
   return tokenDayData;
 }
 
-export async function updateTokenHourData(
+export function updateTokenHourData(
   token: TokenEntity,
   bundle: BundleEntity,
   timestamp: number,
+  tokenHourData: TokenHourDataEntity | undefined,
   context:
     | UniswapV3PoolContract_BurnEvent_handlerContextAsync
     | UniswapV3PoolContract_CollectEvent_handlerContextAsync
     | UniswapV3PoolContract_MintEvent_handlerContextAsync
     | UniswapV3PoolContract_SwapEvent_handlerContextAsync
-): Promise<TokenHourDataEntity> {
+): TokenHourDataEntity {
   const hourIndex = getHourIndex(timestamp); // get unique hour within unix history
   const hourStartUnix = getHourStartUnix(hourIndex); // want the rounded effect
   const tokenHourID = token.id.concat("-").concat(hourIndex.toString());
 
-  let tokenHourData = await context.TokenHourData.get(tokenHourID);
   const tokenPrice = token.derivedETH.times(bundle.ethPriceUSD);
 
   if (!tokenHourData) {

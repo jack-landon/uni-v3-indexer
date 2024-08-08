@@ -19,30 +19,26 @@ import {
 } from "./utils/constants";
 import type { publicClients } from "./utils/viem";
 
-const poolsToWatch = [
-  "0x9fee7385a2979D15277C3467Db7D99EF1A2669D7", // tbtc/WETH 0.3
-  "0xecA826E450a8AC6Cf9Ab228AE12B84D0407212a7", // tbtc/USDC 0.3
-  "0xbD268aC461969eb956707Fb35cE486f1A89c9167", // SKR/WETH 0.3
-  "0xd0b53D9277642d899DF5C87A3966A349A798F224", // WETH/USDC 0.05
-  "0x455fd3AE52a8AB80f319a1bF912457AA8296695a", // IHF/WETH 1%
-  "0xe9Ed60539a8eA7A4dA04eBFa524e631B1Fd48525", // WETH/SKOP 1%
-];
+// const poolsToWatch = [
+//   "0x9fee7385a2979D15277C3467Db7D99EF1A2669D7", // tbtc/WETH 0.3
+//   "0xecA826E450a8AC6Cf9Ab228AE12B84D0407212a7", // tbtc/USDC 0.3
+//   "0xbD268aC461969eb956707Fb35cE486f1A89c9167", // SKR/WETH 0.3
+//   "0xd0b53D9277642d899DF5C87A3966A349A798F224", // WETH/USDC 0.05
+//   "0x455fd3AE52a8AB80f319a1bF912457AA8296695a", // IHF/WETH 1%
+//   "0xe9Ed60539a8eA7A4dA04eBFa524e631B1Fd48525", // WETH/SKOP 1%
+// ];
 
 UniswapV3FactoryContract.PoolCreated.loader(({ event, context }) => {
-  if (event.chainId == ETH_MAINNET_ID) {
-    context.Factory.load(ETH_MAINNET_FACTORY_CONTRACT);
-  } else if (event.chainId == BASE_MAINNET_ID) {
-    context.Factory.load(BASE_FACTORY_CONTRACT);
-  }
-  if (poolsToWatch.includes(event.params.pool)) {
-    context.contractRegistration.addUniswapV3Pool(event.params.pool);
-  }
+  // if (event.chainId == ETH_MAINNET_ID) {
+  //   context.Factory.load(ETH_MAINNET_FACTORY_CONTRACT);
+  // } else if (event.chainId == BASE_MAINNET_ID) {
+  //   context.Factory.load(BASE_FACTORY_CONTRACT);
+  // }
+  context.contractRegistration.addUniswapV3Pool(event.params.pool);
 });
 
 UniswapV3FactoryContract.PoolCreated.handlerAsync(
   async ({ event, context }) => {
-    if (event.chainId !== 8453 || !poolsToWatch.includes(event.params.pool))
-      return;
     const subgraphConfig = getSubgraphConfig(event.chainId);
     const whitelistTokens = subgraphConfig.whitelistTokens;
     const tokenOverrides = subgraphConfig.tokenOverrides;
@@ -60,7 +56,7 @@ UniswapV3FactoryContract.PoolCreated.handlerAsync(
     let factory = await context.Factory.get(event.srcAddress);
 
     if (!factory) {
-      context.log.info(`Theres no factory`);
+      context.log.info(`Creating Factory`);
 
       factory = {
         id: event.srcAddress,
@@ -125,6 +121,8 @@ UniswapV3FactoryContract.PoolCreated.handlerAsync(
       volumeToken1: ZERO_BD,
       volumeUSD: ZERO_BD,
       feesUSD: ZERO_BD,
+      feeGrowthGlobal0X128: ZERO_BI,
+      feeGrowthGlobal1X128: ZERO_BI,
       untrackedVolumeUSD: ZERO_BD,
       collectedFeesToken0: ZERO_BD,
       collectedFeesToken1: ZERO_BD,
@@ -164,7 +162,7 @@ UniswapV3FactoryContract.PoolCreated.handlerAsync(
 
       // bail if we couldn't figure out the decimals
       if (!decimals) {
-        context.log.debug("mybug the decimal on token 0 was null");
+        context.log.debug("No Decimal for token0");
         return;
       }
 
@@ -214,7 +212,7 @@ UniswapV3FactoryContract.PoolCreated.handlerAsync(
 
       // bail if we couldn't figure out the decimals
       if (!decimals) {
-        context.log.debug("mybug the decimal on token 1 was null");
+        context.log.debug("No Decimal for token1");
         return;
       }
 

@@ -28,6 +28,7 @@ import {
 import { getSubgraphConfig } from "./utils/chains";
 import {
   getDayID,
+  getDayStartTimestamp,
   getHourIndex,
   getHourStartUnix,
   updatePoolDayData,
@@ -37,45 +38,51 @@ import {
   updateUniswapDayData,
 } from "./utils/intervalUpdates";
 import { createTick } from "./utils/tick";
+import { poolAbi } from "./utils/abis";
+import { publicClients } from "./utils/viem";
 
 UniswapV3PoolContract.Burn.loader(({ event, context }) => {
-  const poolAddress = event.srcAddress;
-  const lowerTickId =
-    poolAddress + "#" + BigInt(event.params.tickLower).toString();
-  const upperTickId =
-    poolAddress + "#" + BigInt(event.params.tickUpper).toString();
-
-  context.Tick.load(lowerTickId, {
-    loadPool: { loadToken0: true, loadToken1: true },
-  });
-  context.Tick.load(upperTickId, {
-    loadPool: { loadToken0: true, loadToken1: true },
-  });
-  context.Bundle.load(event.chainId.toString());
-
-  const dayID = getDayID(event.blockTimestamp);
-  context.UniswapDayData.load(dayID.toString());
-
-  const dayPoolID = event.srcAddress.concat("-").concat(dayID.toString());
-  context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
-  context.PoolDayData.load(dayPoolID, {
-    loadPool: { loadToken0: true, loadToken1: true },
-  });
-
-  const hourIndex = getHourIndex(event.blockTimestamp); // get unique hour within unix history
-  const hourPoolID = event.srcAddress.concat("-").concat(hourIndex.toString());
-  context.PoolHourData.load(hourPoolID, {
-    loadPool: { loadToken0: true, loadToken1: true },
-  });
+  // const poolAddress = event.srcAddress;
+  // const lowerTickId =
+  //   poolAddress + "#" + BigInt(event.params.tickLower).toString();
+  // const upperTickId =
+  //   poolAddress + "#" + BigInt(event.params.tickUpper).toString();
+  // context.Tick.load(lowerTickId, {
+  //   loadPool: { loadToken0: true, loadToken1: true },
+  // });
+  // context.Tick.load(upperTickId, {
+  //   loadPool: { loadToken0: true, loadToken1: true },
+  // });
+  // context.Bundle.load(event.chainId.toString());
+  // const dayID = getDayID(event.blockTimestamp);
+  // context.UniswapDayData.load(dayID.toString());
+  // const dayPoolID = event.srcAddress.concat("-").concat(dayID.toString());
+  // context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
+  // context.PoolDayData.load(dayPoolID, {
+  //   loadPool: { loadToken0: true, loadToken1: true },
+  // });
+  // const hourIndex = getHourIndex(event.blockTimestamp); // get unique hour within unix history
+  // const hourPoolID = event.srcAddress.concat("-").concat(hourIndex.toString());
+  // context.PoolHourData.load(hourPoolID, {
+  //   loadPool: { loadToken0: true, loadToken1: true },
+  // });
 });
 
 UniswapV3PoolContract.Burn.handlerAsync(async ({ event, context }) => {
   const factoryAddress = getFactoryAddress(event.chainId);
 
-  let [bundle, pool, factory] = await Promise.all([
+  // tick entities
+  const lowerTickId =
+    event.srcAddress + "#" + event.params.tickLower.toString();
+  const upperTickId =
+    event.srcAddress + "#" + event.params.tickUpper.toString();
+
+  let [bundle, pool, factory, lowerTick, upperTick] = await Promise.all([
     context.Bundle.get(event.chainId.toString())!,
     context.Pool.get(event.srcAddress)!,
     context.Factory.get(factoryAddress)!,
+    context.Tick.get(lowerTickId),
+    context.Tick.get(upperTickId),
   ]);
 
   if (!bundle) {
@@ -90,17 +97,9 @@ UniswapV3PoolContract.Burn.handlerAsync(async ({ event, context }) => {
     return context.log.error(`Factory not found for chain ${event.chainId}`);
   }
 
-  // tick entities
-  const lowerTickId =
-    event.srcAddress + "#" + event.params.tickLower.toString();
-  const upperTickId =
-    event.srcAddress + "#" + event.params.tickUpper.toString();
-
-  let [token0, token1, lowerTick, upperTick] = await Promise.all([
+  let [token0, token1] = await Promise.all([
     context.Token.get(pool.token0_id),
     context.Token.get(pool.token1_id),
-    context.Tick.get(lowerTickId),
-    context.Tick.get(upperTickId),
   ]);
 
   if (token0 && token1) {
@@ -201,16 +200,109 @@ UniswapV3PoolContract.Burn.handlerAsync(async ({ event, context }) => {
     }
 
     const dayID = getDayID(event.blockTimestamp);
+    const dayPoolID = pool.id.concat("-").concat(dayID.toString());
+    const hourIndex = getHourIndex(event.blockTimestamp); // get unique hour within unix history
+    const hourPoolID = pool.id.concat("-").concat(hourIndex.toString());
+    const token0DayID = token0.id.concat("-").concat(dayID.toString());
+    const token1DayID = token1.id.concat("-").concat(dayID.toString());
+    const token0HourID = token0.id.concat("-").concat(hourIndex.toString());
+    const token1HourID = token1.id.concat("-").concat(hourIndex.toString());
 
-    await Promise.all([
-      updateUniswapDayData(dayID, factory, context),
-      updatePoolDayData(dayID, pool, context),
-      updatePoolHourData(event.blockTimestamp, pool, context),
-      updateTokenDayData(token0, bundle, dayID, context),
-      updateTokenDayData(token1, bundle, dayID, context),
-      updateTokenHourData(token0, bundle, event.blockTimestamp, context),
-      updateTokenHourData(token1, bundle, event.blockTimestamp, context),
+    let [
+      uniswapDayData,
+      poolDayData,
+      poolHourData,
+      token0DayData,
+      token1DayData,
+      token0HourData,
+      token1HourData,
+    ] = await Promise.all([
+      context.UniswapDayData.get(dayID.toString()),
+      context.PoolDayData.get(dayPoolID),
+      context.PoolHourData.get(hourPoolID),
+      context.TokenDayData.get(token0DayID),
+      context.TokenDayData.get(token1DayID),
+      context.TokenHourData.get(token0HourID),
+      context.TokenHourData.get(token1HourID),
     ]);
+
+    let feeGrowthGlobal0X128: bigint | undefined = undefined;
+    let feeGrowthGlobal1X128: bigint | undefined = undefined;
+
+    if (!poolHourData) {
+      // Call for feeGrowthGlobal0X128 and feeGrowthGlobal1X128
+      const poolContract = {
+        address: event.srcAddress as `0x${string}`,
+        abi: poolAbi,
+      } as const;
+
+      const results = await publicClients[
+        event.chainId as keyof typeof publicClients
+      ].multicall({
+        contracts: [
+          {
+            ...poolContract,
+            functionName: "feeGrowthGlobal0X128",
+          },
+          {
+            ...poolContract,
+            functionName: "feeGrowthGlobal1X128",
+          },
+        ],
+        blockNumber: BigInt(event.blockNumber),
+      });
+
+      feeGrowthGlobal0X128 = results[0].result;
+      feeGrowthGlobal1X128 = results[1].result;
+
+      if (feeGrowthGlobal0X128) {
+        pool = {
+          ...pool,
+          feeGrowthGlobal0X128,
+        };
+      }
+
+      if (feeGrowthGlobal1X128) {
+        pool = {
+          ...pool,
+          feeGrowthGlobal1X128,
+        };
+      }
+    }
+
+    updateUniswapDayData(dayID, factory, uniswapDayData, context);
+    updatePoolDayData(
+      dayID,
+      pool,
+      poolDayData,
+      feeGrowthGlobal0X128,
+      feeGrowthGlobal1X128,
+      context
+    );
+    updatePoolHourData(
+      event.blockTimestamp,
+      pool,
+      poolHourData,
+      feeGrowthGlobal0X128,
+      feeGrowthGlobal1X128,
+      context
+    );
+    updateTokenDayData(token0, bundle, dayID, token0DayData, context);
+    updateTokenDayData(token1, bundle, dayID, token1DayData, context);
+    updateTokenHourData(
+      token0,
+      bundle,
+      event.blockTimestamp,
+      token0HourData,
+      context
+    );
+    updateTokenHourData(
+      token1,
+      bundle,
+      event.blockTimestamp,
+      token1HourData,
+      context
+    );
 
     context.Token.set(token0);
     context.Token.set(token1);
@@ -221,23 +313,20 @@ UniswapV3PoolContract.Burn.handlerAsync(async ({ event, context }) => {
 });
 
 UniswapV3PoolContract.Collect.loader(({ event, context }) => {
-  context.Bundle.load(event.chainId.toString());
-  context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
-
-  const dayID = getDayID(event.blockTimestamp);
-  context.UniswapDayData.load(dayID.toString());
-
-  const dayPoolID = event.srcAddress.concat("-").concat(dayID.toString());
-  context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
-  context.PoolDayData.load(dayPoolID, {
-    loadPool: { loadToken0: true, loadToken1: true },
-  });
-
-  const hourIndex = getHourIndex(event.blockTimestamp); // get unique hour within unix history
-  const hourPoolID = event.srcAddress.concat("-").concat(hourIndex.toString());
-  context.PoolHourData.load(hourPoolID, {
-    loadPool: { loadToken0: true, loadToken1: true },
-  });
+  // context.Bundle.load(event.chainId.toString());
+  // context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
+  // const dayID = getDayID(event.blockTimestamp);
+  // context.UniswapDayData.load(dayID.toString());
+  // const dayPoolID = event.srcAddress.concat("-").concat(dayID.toString());
+  // context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
+  // context.PoolDayData.load(dayPoolID, {
+  //   loadPool: { loadToken0: true, loadToken1: true },
+  // });
+  // const hourIndex = getHourIndex(event.blockTimestamp); // get unique hour within unix history
+  // const hourPoolID = event.srcAddress.concat("-").concat(hourIndex.toString());
+  // context.PoolHourData.load(hourPoolID, {
+  //   loadPool: { loadToken0: true, loadToken1: true },
+  // });
 });
 
 UniswapV3PoolContract.Collect.handlerAsync(async ({ event, context }) => {
@@ -246,10 +335,16 @@ UniswapV3PoolContract.Collect.handlerAsync(async ({ event, context }) => {
 
   const whitelistTokens = subgraphConfig.whitelistTokens;
 
-  let [bundle, pool, factory] = await Promise.all([
+  let [bundle, pool, factory, transaction] = await Promise.all([
     context.Bundle.get(event.chainId.toString())!,
     context.Pool.get(event.srcAddress),
     context.Factory.get(factoryAddress)!,
+    loadTransaction(
+      event.transactionHash,
+      event.blockNumber,
+      event.blockTimestamp,
+      context
+    ),
   ]);
 
   if (!bundle) {
@@ -259,13 +354,6 @@ UniswapV3PoolContract.Collect.handlerAsync(async ({ event, context }) => {
   if (!pool) {
     return;
   }
-
-  const transaction = await loadTransaction(
-    event.transactionHash,
-    event.blockNumber,
-    event.blockTimestamp,
-    context
-  );
 
   if (!factory) {
     return context.log.error(`Factory not found for chain ${event.chainId}`);
@@ -385,17 +473,111 @@ UniswapV3PoolContract.Collect.handlerAsync(async ({ event, context }) => {
     logIndex: event.logIndex,
   };
 
+  // Update Interval Data
   const dayID = getDayID(event.blockTimestamp);
+  const dayPoolID = pool.id.concat("-").concat(dayID.toString());
+  const hourIndex = getHourIndex(event.blockTimestamp); // get unique hour within unix history
+  const hourPoolID = pool.id.concat("-").concat(hourIndex.toString());
+  const token0DayID = token0.id.concat("-").concat(dayID.toString());
+  const token1DayID = token1.id.concat("-").concat(dayID.toString());
+  const token0HourID = token0.id.concat("-").concat(hourIndex.toString());
+  const token1HourID = token1.id.concat("-").concat(hourIndex.toString());
 
-  await Promise.all([
-    updateUniswapDayData(dayID, factory, context),
-    updatePoolDayData(dayID, pool, context),
-    updatePoolHourData(event.blockTimestamp, pool, context),
-    updateTokenDayData(token0, bundle, dayID, context),
-    updateTokenDayData(token1, bundle, dayID, context),
-    updateTokenHourData(token0, bundle, event.blockTimestamp, context),
-    updateTokenHourData(token1, bundle, event.blockTimestamp, context),
+  let [
+    uniswapDayData,
+    poolDayData,
+    poolHourData,
+    token0DayData,
+    token1DayData,
+    token0HourData,
+    token1HourData,
+  ] = await Promise.all([
+    context.UniswapDayData.get(dayID.toString()),
+    context.PoolDayData.get(dayPoolID),
+    context.PoolHourData.get(hourPoolID),
+    context.TokenDayData.get(token0DayID),
+    context.TokenDayData.get(token1DayID),
+    context.TokenHourData.get(token0HourID),
+    context.TokenHourData.get(token1HourID),
   ]);
+
+  let feeGrowthGlobal0X128: bigint | undefined = undefined;
+  let feeGrowthGlobal1X128: bigint | undefined = undefined;
+
+  if (!poolHourData) {
+    // Call for feeGrowthGlobal0X128 and feeGrowthGlobal1X128
+    const poolContract = {
+      address: event.srcAddress as `0x${string}`,
+      abi: poolAbi,
+    } as const;
+
+    const results = await publicClients[
+      event.chainId as keyof typeof publicClients
+    ].multicall({
+      contracts: [
+        {
+          ...poolContract,
+          functionName: "feeGrowthGlobal0X128",
+        },
+        {
+          ...poolContract,
+          functionName: "feeGrowthGlobal1X128",
+        },
+      ],
+      blockNumber: BigInt(event.blockNumber),
+    });
+
+    feeGrowthGlobal0X128 = results[0].result;
+    feeGrowthGlobal1X128 = results[1].result;
+
+    if (feeGrowthGlobal0X128) {
+      pool = {
+        ...pool,
+        feeGrowthGlobal0X128,
+      };
+    }
+
+    if (feeGrowthGlobal1X128) {
+      pool = {
+        ...pool,
+        feeGrowthGlobal1X128,
+      };
+    }
+  }
+
+  updateUniswapDayData(dayID, factory, uniswapDayData, context);
+  updatePoolDayData(
+    dayID,
+    pool,
+    poolDayData,
+    feeGrowthGlobal0X128,
+    feeGrowthGlobal1X128,
+    context
+  );
+  updatePoolHourData(
+    event.blockTimestamp,
+    pool,
+    poolHourData,
+    feeGrowthGlobal0X128,
+    feeGrowthGlobal1X128,
+    context
+  );
+  updateTokenDayData(token0, bundle, dayID, token0DayData, context);
+  updateTokenDayData(token1, bundle, dayID, token1DayData, context);
+  updateTokenHourData(
+    token0,
+    bundle,
+    event.blockTimestamp,
+    token0HourData,
+    context
+  );
+  updateTokenHourData(
+    token1,
+    bundle,
+    event.blockTimestamp,
+    token1HourData,
+    context
+  );
 
   context.Token.set(token0);
   context.Token.set(token1);
@@ -405,22 +587,19 @@ UniswapV3PoolContract.Collect.handlerAsync(async ({ event, context }) => {
 });
 
 UniswapV3PoolContract.Initialize.loader(({ event, context }) => {
-  const subgraphConfig = getSubgraphConfig(event.chainId);
-
-  context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
-  context.Bundle.load(event.chainId.toString());
-  context.Pool.load(subgraphConfig.stablecoinWrappedNativePoolAddress, {
-    loadToken0: true,
-    loadToken1: true,
-  });
-
-  const dayID = getDayID(event.blockTimestamp);
-
-  const dayPoolID = event.srcAddress.concat("-").concat(dayID.toString());
-  context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
-  context.PoolDayData.load(dayPoolID, {
-    loadPool: { loadToken0: true, loadToken1: true },
-  });
+  // const subgraphConfig = getSubgraphConfig(event.chainId);
+  // context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
+  // context.Bundle.load(event.chainId.toString());
+  // context.Pool.load(subgraphConfig.stablecoinWrappedNativePoolAddress, {
+  //   loadToken0: true,
+  //   loadToken1: true,
+  // });
+  // const dayID = getDayID(event.blockTimestamp);
+  // const dayPoolID = event.srcAddress.concat("-").concat(dayID.toString());
+  // context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
+  // context.PoolDayData.load(dayPoolID, {
+  //   loadPool: { loadToken0: true, loadToken1: true },
+  // });
 });
 
 UniswapV3PoolContract.Initialize.handlerAsync(async ({ event, context }) => {
@@ -467,14 +646,78 @@ UniswapV3PoolContract.Initialize.handlerAsync(async ({ event, context }) => {
   context.Bundle.set(bundle);
 
   const dayID = getDayID(event.blockTimestamp);
+  const dayPoolID = pool.id.concat("-").concat(dayID.toString());
+  const hourIndex = getHourIndex(event.blockTimestamp); // get unique hour within unix history
+  const hourPoolID = pool.id.concat("-").concat(hourIndex.toString());
 
   // update token prices
-  let [token0, token1] = await Promise.all([
+  let [token0, token1, poolDayData, poolHourData] = await Promise.all([
     context.Token.get(pool.token0_id),
     context.Token.get(pool.token1_id),
-    updatePoolDayData(dayID, pool, context),
-    updatePoolHourData(event.blockTimestamp, pool, context),
+    context.PoolDayData.get(dayPoolID),
+    context.PoolHourData.get(hourPoolID),
   ]);
+
+  let feeGrowthGlobal0X128: bigint | undefined = undefined;
+  let feeGrowthGlobal1X128: bigint | undefined = undefined;
+
+  if (!poolHourData) {
+    // Call for feeGrowthGlobal0X128 and feeGrowthGlobal1X128
+    const poolContract = {
+      address: event.srcAddress as `0x${string}`,
+      abi: poolAbi,
+    } as const;
+
+    const results = await publicClients[
+      event.chainId as keyof typeof publicClients
+    ].multicall({
+      contracts: [
+        {
+          ...poolContract,
+          functionName: "feeGrowthGlobal0X128",
+        },
+        {
+          ...poolContract,
+          functionName: "feeGrowthGlobal1X128",
+        },
+      ],
+      blockNumber: BigInt(event.blockNumber),
+    });
+
+    feeGrowthGlobal0X128 = results[0].result;
+    feeGrowthGlobal1X128 = results[1].result;
+
+    if (feeGrowthGlobal0X128) {
+      pool = {
+        ...pool,
+        feeGrowthGlobal0X128,
+      };
+    }
+
+    if (feeGrowthGlobal1X128) {
+      pool = {
+        ...pool,
+        feeGrowthGlobal1X128,
+      };
+    }
+  }
+
+  updatePoolDayData(
+    dayID,
+    pool,
+    poolDayData,
+    feeGrowthGlobal0X128,
+    feeGrowthGlobal1X128,
+    context
+  );
+  updatePoolHourData(
+    event.blockTimestamp,
+    pool,
+    poolHourData,
+    feeGrowthGlobal0X128,
+    feeGrowthGlobal1X128,
+    context
+  );
 
   // update token prices
   if (token0 && token1) {
@@ -513,46 +756,55 @@ UniswapV3PoolContract.Initialize.handlerAsync(async ({ event, context }) => {
 });
 
 UniswapV3PoolContract.Mint.loader(({ event, context }) => {
-  context.Bundle.load(event.chainId.toString());
-  context.Factory.load(getFactoryAddress(event.chainId));
-  context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
-
-  const lowerTickId =
-    event.srcAddress + "#" + BigInt(event.params.tickLower).toString();
-  const upperTickId =
-    event.srcAddress + "#" + BigInt(event.params.tickUpper).toString();
-
-  context.Tick.load(lowerTickId, {
-    loadPool: { loadToken0: true, loadToken1: true },
-  });
-  context.Tick.load(upperTickId, {
-    loadPool: { loadToken0: true, loadToken1: true },
-  });
-
-  const dayID = getDayID(event.blockTimestamp);
-  context.UniswapDayData.load(dayID.toString());
-
-  const dayPoolID = event.srcAddress.concat("-").concat(dayID.toString());
-  context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
-  context.PoolDayData.load(dayPoolID, {
-    loadPool: { loadToken0: true, loadToken1: true },
-  });
-
-  const hourIndex = getHourIndex(event.blockTimestamp); // get unique hour within unix history
-  const hourPoolID = event.srcAddress.concat("-").concat(hourIndex.toString());
-  context.PoolHourData.load(hourPoolID, {
-    loadPool: { loadToken0: true, loadToken1: true },
-  });
+  // context.Bundle.load(event.chainId.toString());
+  // context.Factory.load(getFactoryAddress(event.chainId));
+  // context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
+  // const lowerTickId =
+  //   event.srcAddress + "#" + BigInt(event.params.tickLower).toString();
+  // const upperTickId =
+  //   event.srcAddress + "#" + BigInt(event.params.tickUpper).toString();
+  // context.Tick.load(lowerTickId, {
+  //   loadPool: { loadToken0: true, loadToken1: true },
+  // });
+  // context.Tick.load(upperTickId, {
+  //   loadPool: { loadToken0: true, loadToken1: true },
+  // });
+  // const dayID = getDayID(event.blockTimestamp);
+  // context.UniswapDayData.load(dayID.toString());
+  // const dayPoolID = event.srcAddress.concat("-").concat(dayID.toString());
+  // context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
+  // context.PoolDayData.load(dayPoolID, {
+  //   loadPool: { loadToken0: true, loadToken1: true },
+  // });
+  // const hourIndex = getHourIndex(event.blockTimestamp); // get unique hour within unix history
+  // const hourPoolID = event.srcAddress.concat("-").concat(hourIndex.toString());
+  // context.PoolHourData.load(hourPoolID, {
+  //   loadPool: { loadToken0: true, loadToken1: true },
+  // });
 });
 
 UniswapV3PoolContract.Mint.handlerAsync(async ({ event, context }) => {
   const factoryAddress = getFactoryAddress(event.chainId);
 
-  let [bundle, pool, factory] = await Promise.all([
-    context.Bundle.get(event.chainId.toString())!,
-    context.Pool.get(event.srcAddress)!,
-    context.Factory.get(factoryAddress)!,
-  ]);
+  const lowerTickId =
+    event.srcAddress + "#" + event.params.tickLower.toString();
+  const upperTickId =
+    event.srcAddress + "#" + event.params.tickUpper.toString();
+
+  let [bundle, pool, factory, transaction, lowerTick, upperTick] =
+    await Promise.all([
+      context.Bundle.get(event.chainId.toString())!,
+      context.Pool.get(event.srcAddress)!,
+      context.Factory.get(factoryAddress)!,
+      loadTransaction(
+        event.transactionHash,
+        event.blockNumber,
+        event.blockTimestamp,
+        context
+      ),
+      context.Tick.get(lowerTickId),
+      context.Tick.get(upperTickId),
+    ]);
 
   if (!bundle) {
     return context.log.error(`Bundle not found for chain ${event.chainId}`);
@@ -566,22 +818,9 @@ UniswapV3PoolContract.Mint.handlerAsync(async ({ event, context }) => {
     return context.log.error(`Factory not found for chain ${event.chainId}`);
   }
 
-  const lowerTickId =
-    event.srcAddress + "#" + event.params.tickLower.toString();
-  const upperTickId =
-    event.srcAddress + "#" + event.params.tickUpper.toString();
-
-  let [token0, token1, transaction, lowerTick, upperTick] = await Promise.all([
+  let [token0, token1] = await Promise.all([
     context.Token.get(pool.token0_id),
     context.Token.get(pool.token1_id),
-    loadTransaction(
-      event.transactionHash,
-      event.blockNumber,
-      event.blockTimestamp,
-      context
-    ),
-    context.Tick.get(lowerTickId),
-    context.Tick.get(upperTickId),
   ]);
 
   if (token0 && token1) {
@@ -746,16 +985,109 @@ UniswapV3PoolContract.Mint.handlerAsync(async ({ event, context }) => {
     // level requires reimplementing some of the swapping code from v3-core.
 
     const dayID = getDayID(event.blockTimestamp);
+    const dayPoolID = pool.id.concat("-").concat(dayID.toString());
+    const hourIndex = getHourIndex(event.blockTimestamp); // get unique hour within unix history
+    const hourPoolID = pool.id.concat("-").concat(hourIndex.toString());
+    const token0DayID = token0.id.concat("-").concat(dayID.toString());
+    const token1DayID = token1.id.concat("-").concat(dayID.toString());
+    const token0HourID = token0.id.concat("-").concat(hourIndex.toString());
+    const token1HourID = token1.id.concat("-").concat(hourIndex.toString());
 
-    await Promise.all([
-      updateUniswapDayData(dayID, factory, context),
-      updatePoolDayData(dayID, pool, context),
-      updatePoolHourData(event.blockTimestamp, pool, context),
-      updateTokenDayData(token0, bundle, dayID, context),
-      updateTokenDayData(token1, bundle, dayID, context),
-      updateTokenHourData(token0, bundle, event.blockTimestamp, context),
-      updateTokenHourData(token1, bundle, event.blockTimestamp, context),
+    let [
+      uniswapDayData,
+      poolDayData,
+      poolHourData,
+      token0DayData,
+      token1DayData,
+      token0HourData,
+      token1HourData,
+    ] = await Promise.all([
+      context.UniswapDayData.get(dayID.toString()),
+      context.PoolDayData.get(dayPoolID),
+      context.PoolHourData.get(hourPoolID),
+      context.TokenDayData.get(token0DayID),
+      context.TokenDayData.get(token1DayID),
+      context.TokenHourData.get(token0HourID),
+      context.TokenHourData.get(token1HourID),
     ]);
+
+    let feeGrowthGlobal0X128: bigint | undefined = undefined;
+    let feeGrowthGlobal1X128: bigint | undefined = undefined;
+
+    if (!poolHourData) {
+      // Call for feeGrowthGlobal0X128 and feeGrowthGlobal1X128
+      const poolContract = {
+        address: event.srcAddress as `0x${string}`,
+        abi: poolAbi,
+      } as const;
+
+      const results = await publicClients[
+        event.chainId as keyof typeof publicClients
+      ].multicall({
+        contracts: [
+          {
+            ...poolContract,
+            functionName: "feeGrowthGlobal0X128",
+          },
+          {
+            ...poolContract,
+            functionName: "feeGrowthGlobal1X128",
+          },
+        ],
+        blockNumber: BigInt(event.blockNumber),
+      });
+
+      feeGrowthGlobal0X128 = results[0].result;
+      feeGrowthGlobal1X128 = results[1].result;
+
+      if (feeGrowthGlobal0X128) {
+        pool = {
+          ...pool,
+          feeGrowthGlobal0X128,
+        };
+      }
+
+      if (feeGrowthGlobal1X128) {
+        pool = {
+          ...pool,
+          feeGrowthGlobal1X128,
+        };
+      }
+    }
+
+    updateUniswapDayData(dayID, factory, uniswapDayData, context);
+    updatePoolDayData(
+      dayID,
+      pool,
+      poolDayData,
+      feeGrowthGlobal0X128,
+      feeGrowthGlobal1X128,
+      context
+    );
+    updatePoolHourData(
+      event.blockTimestamp,
+      pool,
+      poolHourData,
+      feeGrowthGlobal0X128,
+      feeGrowthGlobal1X128,
+      context
+    );
+    updateTokenDayData(token0, bundle, dayID, token0DayData, context);
+    updateTokenDayData(token1, bundle, dayID, token1DayData, context);
+    updateTokenHourData(
+      token0,
+      bundle,
+      event.blockTimestamp,
+      token0HourData,
+      context
+    );
+    updateTokenHourData(
+      token1,
+      bundle,
+      event.blockTimestamp,
+      token1HourData,
+      context
+    );
 
     context.Token.set(token0);
     context.Token.set(token1);
@@ -766,30 +1098,26 @@ UniswapV3PoolContract.Mint.handlerAsync(async ({ event, context }) => {
 });
 
 UniswapV3PoolContract.Swap.loader(({ event, context }) => {
-  const subgraphConfig = getSubgraphConfig(event.chainId);
-
-  context.Bundle.load(event.chainId.toString());
-  context.Factory.load(getFactoryAddress(event.chainId));
-  context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
-  context.Pool.load(subgraphConfig.stablecoinWrappedNativePoolAddress, {
-    loadToken0: true,
-    loadToken1: true,
-  });
-
-  const dayID = getDayID(event.blockTimestamp);
-  context.UniswapDayData.load(dayID.toString());
-
-  const dayPoolID = event.srcAddress.concat("-").concat(dayID.toString());
-  context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
-  context.PoolDayData.load(dayPoolID, {
-    loadPool: { loadToken0: true, loadToken1: true },
-  });
-
-  const hourIndex = getHourIndex(event.blockTimestamp); // get unique hour within unix history
-  const hourPoolID = event.srcAddress.concat("-").concat(hourIndex.toString());
-  context.PoolHourData.load(hourPoolID, {
-    loadPool: { loadToken0: true, loadToken1: true },
-  });
+  // const subgraphConfig = getSubgraphConfig(event.chainId);
+  // context.Bundle.load(event.chainId.toString());
+  // context.Factory.load(getFactoryAddress(event.chainId));
+  // context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
+  // context.Pool.load(subgraphConfig.stablecoinWrappedNativePoolAddress, {
+  //   loadToken0: true,
+  //   loadToken1: true,
+  // });
+  // const dayID = getDayID(event.blockTimestamp);
+  // context.UniswapDayData.load(dayID.toString());
+  // const dayPoolID = event.srcAddress.concat("-").concat(dayID.toString());
+  // context.Pool.load(event.srcAddress, { loadToken0: true, loadToken1: true });
+  // context.PoolDayData.load(dayPoolID, {
+  //   loadPool: { loadToken0: true, loadToken1: true },
+  // });
+  // const hourIndex = getHourIndex(event.blockTimestamp); // get unique hour within unix history
+  // const hourPoolID = event.srcAddress.concat("-").concat(hourIndex.toString());
+  // context.PoolHourData.load(hourPoolID, {
+  //   loadPool: { loadToken0: true, loadToken1: true },
+  // });
 });
 
 UniswapV3PoolContract.Swap.handlerAsync(async ({ event, context }) => {
@@ -1063,24 +1391,126 @@ UniswapV3PoolContract.Swap.handlerAsync(async ({ event, context }) => {
 
     // interval data
     const dayID = getDayID(event.blockTimestamp);
+    const dayPoolID = pool.id.concat("-").concat(dayID.toString());
+    const hourIndex = getHourIndex(event.blockTimestamp); // get unique hour within unix history
+    const hourPoolID = pool.id.concat("-").concat(hourIndex.toString());
+    const token0DayID = token0.id.concat("-").concat(dayID.toString());
+    const token1DayID = token1.id.concat("-").concat(dayID.toString());
+    const token0HourID = token0.id.concat("-").concat(hourIndex.toString());
+    const token1HourID = token1.id.concat("-").concat(hourIndex.toString());
 
     let [
-      uniswapDayData,
-      poolDayData,
-      poolHourData,
-      token0DayData,
-      token1DayData,
-      token0HourData,
-      token1HourData,
+      _uniswapDayData,
+      _poolDayData,
+      _poolHourData,
+      _token0DayData,
+      _token1DayData,
+      _token0HourData,
+      _token1HourData,
     ] = await Promise.all([
-      updateUniswapDayData(dayID, factory, context),
-      updatePoolDayData(dayID, pool, context),
-      updatePoolHourData(event.blockTimestamp, pool, context),
-      updateTokenDayData(token0, bundle, dayID, context),
-      updateTokenDayData(token1, bundle, dayID, context),
-      updateTokenHourData(token0, bundle, event.blockTimestamp, context),
-      updateTokenHourData(token1, bundle, event.blockTimestamp, context),
+      context.UniswapDayData.get(dayID.toString()),
+      context.PoolDayData.get(dayPoolID),
+      context.PoolHourData.get(hourPoolID),
+      context.TokenDayData.get(token0DayID),
+      context.TokenDayData.get(token1DayID),
+      context.TokenHourData.get(token0HourID),
+      context.TokenHourData.get(token1HourID),
     ]);
+
+    let feeGrowthGlobal0X128: bigint | undefined = undefined;
+    let feeGrowthGlobal1X128: bigint | undefined = undefined;
+
+    if (!_poolHourData) {
+      // Call for feeGrowthGlobal0X128 and feeGrowthGlobal1X128
+      const poolContract = {
+        address: event.srcAddress as `0x${string}`,
+        abi: poolAbi,
+      } as const;
+
+      const results = await publicClients[
+        event.chainId as keyof typeof publicClients
+      ].multicall({
+        contracts: [
+          {
+            ...poolContract,
+            functionName: "feeGrowthGlobal0X128",
+          },
+          {
+            ...poolContract,
+            functionName: "feeGrowthGlobal1X128",
+          },
+        ],
+        blockNumber: BigInt(event.blockNumber),
+      });
+
+      feeGrowthGlobal0X128 = results[0].result;
+      feeGrowthGlobal1X128 = results[1].result;
+
+      if (feeGrowthGlobal0X128) {
+        pool = {
+          ...pool,
+          feeGrowthGlobal0X128,
+        };
+      }
+
+      if (feeGrowthGlobal1X128) {
+        pool = {
+          ...pool,
+          feeGrowthGlobal1X128,
+        };
+      }
+    }
+
+    let uniswapDayData = updateUniswapDayData(
+      dayID,
+      factory,
+      _uniswapDayData,
+      context
+    );
+    let poolDayData = updatePoolDayData(
+      dayID,
+      pool,
+      _poolDayData,
+      feeGrowthGlobal0X128,
+      feeGrowthGlobal1X128,
+      context
+    );
+    let poolHourData = updatePoolHourData(
+      event.blockTimestamp,
+      pool,
+      _poolHourData,
+      feeGrowthGlobal0X128,
+      feeGrowthGlobal1X128,
+      context
+    );
+    let token0DayData = updateTokenDayData(
+      token0,
+      bundle,
+      dayID,
+      _token0DayData,
+      context
+    );
+    let token1DayData = updateTokenDayData(
+      token1,
+      bundle,
+      dayID,
+      _token1DayData,
+      context
+    );
+    let token0HourData = updateTokenHourData(
+      token0,
+      bundle,
+      event.blockTimestamp,
+      _token0HourData,
+      context
+    );
+    let token1HourData = updateTokenHourData(
+      token1,
+      bundle,
+      event.blockTimestamp,
+      _token1HourData,
+      context
+    );
 
     // update volume metrics
     uniswapDayData = {

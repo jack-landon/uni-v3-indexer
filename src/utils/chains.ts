@@ -152,10 +152,6 @@ export function getSubgraphConfig(chainId: number): SubgraphConfig {
       whitelistTokens: [
         "0x4200000000000000000000000000000000000006", // WETH
         "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", // USDC
-        "0xe2dCA969624795985F2f083BcD0b674337ba130a", // SKR
-        "0x3B9728bD65Ca2c11a817ce39A6e91808CceeF6FD", // IHF
-        "0x6d3B8C76c5396642960243Febf736C6BE8b60562", // SKOP
-        "0x236aa50979D5f3De3Bd1Eeb40E81137F22ab794b", // tBTC
       ],
       tokenOverrides: STATIC_TOKEN_DEFINITIONS[BASE_MAINNET_ID],
       poolsToSkip: [],

@@ -13,7 +13,7 @@ import {
   fetchTokenSymbol,
   fetchTokenTotalSupply,
 } from "../utils/token";
-import { publicClient, publicClients } from "../utils/viem";
+import { publicClients } from "../utils/viem";
 import { erc20Abi, poolAbi } from "../utils/abis";
 
 export async function populateToken(
